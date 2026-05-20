@@ -16,3 +16,6 @@ node_modules/
 # local variables
 .env
 .env.local
+
+# reference data
+secretdata/
