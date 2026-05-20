@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Type Help 风格游戏框架 - Demo</title>
+    <style>
+        /* 复古老旧终端样式 */
+        body {
+            background-color: #0d0d0d;
+            color: #00ff66;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 95vh;
+            overflow: hidden;
+            /* 模拟轻微的 CRT 闪烁感 */
+            text-shadow: 0 0 2px rgba(0, 255, 102, 0.5);
+        }
+
+        /* 游戏输出历史区域 */
+        #console-log {
+            flex: 1;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin-bottom: 20px;
+            padding-right: 10px;
+            line-height: 1.6;
+        }
+
+        /* 滚动条美化 */
+        #console-log::-webkit-scrollbar {
+            width: 8px;
+        }
+        #console-log::-webkit-scrollbar-thumb {
+            background: #004411;
+            border-radius: 4px;
+        }
+
+        /* 输入区域栏 */
+        .input-line {
+            display: flex;
+            align-items: center;
+            border-top: 1px solid #004411;
+            padding-top: 15px;
+        }
+
+        .prompt {
+            margin-right: 10px;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        /* 隐形输入框，只保留光标特效 */
+        #terminal-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #00ff66;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 18px;
+            outline: none;
+            caret-color: #00ff66; /* 原生光标 */
+        }
+
+        /* 玩家输入的文本样式 */
+        .user-input-text {
+            color: #ffffff;
+            font-weight: bold;
+        }
+
+        /* 系统警告/错误提示样式 */
+        .system-error {
+            color: #ff3333;
+        }
+        .system-info {
+            color: #00aaff;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 1. 终端打印输出区 -->
+    <div id="console-log"></div>
+
+    <!-- 2. 终端输入区 -->
+    <div class="input-line">
+        <span class="prompt">&gt;</span>
+        <input type="text" id="terminal-input" autofocus autocomplete="off" spellcheck="false" placeholder="输入 START 开始..." />
+    </div>
+
+    <script>
+        // ==========================================
+        // 核心配置一：游戏剧情数据库 (Database)
+        // ==========================================
+        const gameDatabase = {
+            "START": "【系统初始化成功】\n当前存储库中包含已被封锁的加密档案。\n已知线索：第一起冲突发生在上午10:00的 [书房]，文件代号似乎与时间地点相关。\n提示：尝试将时间与房间简写(如:1000-STUDY)组合输入。输入 HELP 查看全局指令。",
+            
+            "1000-STUDY": "【音频转录 1000-STUDY】\n时间: 10:00  地点: 书房\n发言人 [1]: “你不能这么做，[2]。如果这件事被外界知道，Galley House 就会完蛋。”\n发言人 [2]: “闭嘴！去把 10:15 在 [教堂] (CHAPEL) 的那份报告拿来给我！”",
+            
+            "1015-CHAPEL": "【日志碎片 1015-CHAPEL】\n时间: 10:15  地点: 教堂\n现场发现了一张沾血的便签，字迹属于 [2]: \n“计划有变，[1] 发现了秘密。我们在 10:45 决斗场(ARENA)见分晓。”",
+            
+            "1045-ARENA": "【最终档案 1045-ARENA】\n这里只有一地弹壳。你成功还原了事件的初始时间线。\nDemo 测试到此结束，感谢游玩！"
+        };
+
+        // ==========================================
+        // 核心配置二：状态管理器 (State)
+        // ==========================================
+        const gameState = {
+            // 人物名册字典：代号 -> 真实姓名 (Type Help 的 NAME 功能)
+            nameMap: {
+                "1": "[未知嫌疑人1]",
+                "2": "[未知嫌疑人2]"
+            },
+            isPrinting: false // 锁：防止打字机动画未完时玩家疯狂输入
+        };
+
+        // DOM 元素获取
+        const consoleLog = document.getElementById('console-log');
+        const terminalInput = document.getElementById('terminal-input');
+
+        // ==========================================
+        // 核心逻辑三：打字机延迟打印效果 (Renderer)
+        // ==========================================
+        function typePrint(text, className = "") {
+            return new Promise((resolve) => {
+                gameState.isPrinting = true;
+                const p = document.createElement('p');
+                if (className) p.className = className;
+                consoleLog.appendChild(p);
+
+                let index = 0;
+                // 原版每个字符处理速度，数值越小越快
+                const speed = 15; 
+
+                function nextChar() {
+                    if (index < text.length) {
+                        p.textContent += text[index];
+                        index++;
+                        consoleLog.scrollTop = consoleLog.scrollHeight; // 滚动条自动滚到底
+                        setTimeout(nextChar, speed);
+                    } else {
+                        p.innerHTML += "\n"; // 换行
+                        gameState.isPrinting = false;
+                        resolve();
+                    }
+                }
+                nextChar();
+            });
+        }
+
+        // ==========================================
+        // 核心逻辑四：文本替换处理器 (Name Replacer)
+        // ==========================================
+        function processTextVariables(rawText) {
+            let processed = rawText;
+            // 动态将文本里的 [1], [2] 替换为玩家起的名字
+            for (let key in gameState.nameMap) {
+                processed = processed.replaceAll(`[${key}]`, gameState.nameMap[key]);
+            }
+            return processed;
+        }
+
+        // ==========================================
+        // 核心逻辑五：输入命令解析器 (Parser)
+        // ==========================================
+        async function handleCommand(rawInput) {
+            const input = rawInput.trim();
+            if (!input) return;
+
+            // 1. 在屏幕上即时回显玩家输入的内容
+            const echoP = document.createElement('p');
+            echoP.innerHTML = `<span class="prompt">&gt;</span> <span class="user-input-text">${input}</span>`;
+            consoleLog.appendChild(echoP);
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+
+            // 2. 格式化统一处理：去空格、转大写、允许空格和下划线容错替换为“-”
+            const cleanInput = input.toUpperCase().replace(/[\s_]+/g, '-');
+
+            // 3. 全局基础指令：HELP
+            if (cleanInput === 'HELP') {
+                const helpText = `【系统指令帮助】\n` +
+                                 `- 直接输入[时间-地点]代码检索档案 (例如: 1000-STUDY)\n` +
+                                 `- NAME [代号] [真实姓名] : 为嫌疑人重命名 (例如: name 1 张三)\n` +
+                                 `- ROSTER : 查看当前名册及代号状态\n` +
+                                 `- CLEAR : 清除屏幕缓存`;
+                await typePrint(helpText, "system-info");
+                return;
+            }
+
+            // 4. 全局基础指令：CLEAR
+            if (cleanInput === 'CLEAR') {
+                consoleLog.innerHTML = '';
+                return;
+            }
+
+            // 5. 特殊复合指令：ROSTER (查看名册)
+            if (cleanInput === 'ROSTER') {
+                let rosterText = "【当前已知人员名册】:\n";
+                for (let key in gameState.nameMap) {
+                    rosterText += ` 代号 [${key}] -> ${gameState.nameMap[key]}\n`;
+                }
+                await typePrint(rosterText, "system-info");
+                return;
+            }
+
+            // 6. 特殊复合指令：NAME 重命名机制 (e.g. "NAME 1 威廉")
+            if (cleanInput.startsWith('NAME-')) {
+                // 拆分参数
+                const parts = input.split(/\s+/); // 按空格拆分
+                const id = parts[1];
+                const realName = parts.slice(2).join(" "); // 允许名字带空格
+
+                if (gameState.nameMap[id] !== undefined && realName) {
+                    gameState.nameMap[id] = realName;
+                    await typePrint(`[系统成功]：成功将代号 [${id}] 的身份登记为: "${realName}"`, "system-info");
+                } else {
+                    await typePrint(`[系统错误]：格式错误。请使用: name [代号] [姓名]，例如: name 1 威廉`, "system-error");
+                }
+                return;
+            }
+
+            // 7. 文件名匹配核心逻辑 (Type Help 的灵魂)
+            if (gameDatabase[cleanInput]) {
+                // 获取原文，并通过人名映射处理后打印
+                const rawText = gameDatabase[cleanInput];
+                const finalSubstitutedText = processTextVariables(rawText);
+                await typePrint(finalSubstitutedText);
+            } else {
+                // 未匹配到
+                await typePrint(`[错误]: 无法访问或找不到文件路径 "${input}"。`, "system-error");
+            }
+        }
+
+        // ==========================================
+        // 核心逻辑六：事件监听与初始化
+        // ==========================================
+        terminalInput.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') {
+                const value = terminalInput.value;
+                if (gameState.isPrinting) return; // 打字机在打印时，禁止再次提交
+
+                terminalInput.value = ''; // 清空输入栏
+                await handleCommand(value);
+            }
+        });
+
+        // 点击屏幕任何地方都自动聚焦到输入框
+        document.addEventListener('click', () => {
+            terminalInput.focus();
+        });
+
+        // 游戏启动初始化欢迎语
+        window.onload = () => {
+            typePrint("TYPE HELP PROTOCOL [Version 1.0.4]\n输入 START 并按回车(Enter)以开始读取基线数据...");
+        };
+    </script>
+</body>
+</html>
