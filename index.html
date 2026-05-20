@@ -183,7 +183,7 @@
             if (cleanInput === 'HELP') {
                 const helpText = `【系统指令帮助】\n` +
                                  `- 直接输入[时间-地点]代码检索档案 (例如: 1000-STUDY)\n` +
-                                 `- NAME [代号] [真实姓名] : 为嫌疑人重命名 (例如: name 1 张三)\n` +
+                                 `- NAME [代号] [真实姓名] : 为嫌疑人重命名 (例如: name 1 杨铭宇)\n` +
                                  `- ROSTER : 查看当前名册及代号状态\n` +
                                  `- CLEAR : 清除屏幕缓存`;
                 await typePrint(helpText, "system-info");
@@ -206,7 +206,7 @@
                 return;
             }
 
-            // 6. 特殊复合指令：NAME 重命名机制 (e.g. "NAME 1 威廉")
+            // 6. 特殊复合指令：NAME 重命名机制 (e.g. "NAME 1 杨铭宇")
             if (cleanInput.startsWith('NAME-')) {
                 // 拆分参数
                 const parts = input.split(/\s+/); // 按空格拆分
@@ -217,7 +217,7 @@
                     gameState.nameMap[id] = realName;
                     await typePrint(`[系统成功]：成功将代号 [${id}] 的身份登记为: "${realName}"`, "system-info");
                 } else {
-                    await typePrint(`[系统错误]：格式错误。请使用: name [代号] [姓名]，例如: name 1 威廉`, "system-error");
+                    await typePrint(`[系统错误]：格式错误。请使用: name [代号] [姓名]，例如: name 1 杨铭宇`, "system-error");
                 }
                 return;
             }
